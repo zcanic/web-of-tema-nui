@@ -1,0 +1,37 @@
+/* Your Code Here! */ 
+
+:root {
+    --primary: #396dff;
+    --xs:4px;
+    --s:8px;
+    --m:16px;
+    --l:50px;
+}
+
+.u-textcentre {
+    text-align: center;
+}
+
+body {
+    font-family: fantasy;
+    background-color: antiquewhite;
+}
+
+.navtitle {
+    color: var(--primary);
+    padding: var(--xs) var(--l);
+    font-size: 50px;
+    font-weight: normal;
+}
+.navcontainer{
+    background-color:burlywood ;
+}
+.title {
+    font-size: 150px;
+    color: darkblue;
+    margin: 20px;
+}
+.text {
+    font-size: 30px;
+    color: brown;
+}
