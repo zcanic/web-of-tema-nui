@@ -1,0 +1,48 @@
+/* Your Code Here! */ 
+
+:root {
+    --primary: #396dff;
+    --xs:4px;
+    --s:8px;
+    --m:16px;
+    --l:50px;
+}
+
+.u-textcentre {
+    text-align: center;
+}
+
+body {
+    font-family: fantasy;
+    background-color: antiquewhite;
+}
+
+.navtitle {
+    color: var(--primary);
+    font-size: 50px;
+    font-weight: normal;
+}
+.navcontainer{
+    background-color:burlywood ;
+    padding: 0px var(--l);
+}
+.title {
+    font-size: 150px;
+    color: darkblue;
+    margin: 20px;
+}
+.text {
+    font-size: 30px;
+    color: brown;
+}
+/*.avatar {
+    border-radius: var(--s);
+}*/
+.u-flex{
+    display: flex;
+    justify-content: center;
+}
+.subcontainer {
+    flex-basis: 0;
+    flex-grow: 5;
+}
