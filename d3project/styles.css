@@ -1,37 +1,118 @@
-/* Your Code Here! */ 
+/* Modern Design System */
 
 :root {
-    --primary: #396dff;
-    --xs:4px;
-    --s:8px;
-    --m:16px;
-    --l:50px;
+    --primary: #2D3436;
+    --secondary: #636E72;
+    --accent: #00B894;
+    --background: #F5F6FA;
+    --text: #2D3436;
+    --xs: 4px;
+    --s: 8px;
+    --m: 16px;
+    --l: 50px;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    transition: all 0.3s ease;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: var(--background);
+    color: var(--text);
+    line-height: 1.6;
 }
 
 .u-textcentre {
     text-align: center;
 }
 
-body {
-    font-family: fantasy;
-    background-color: antiquewhite;
+.navcontainer {
+    background-color: white;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    padding: var(--s) 0;
 }
 
 .navtitle {
     color: var(--primary);
-    padding: var(--xs) var(--l);
-    font-size: 50px;
-    font-weight: normal;
+    font-size: 2.5rem;
+    font-weight: 600;
+    letter-spacing: -1px;
+    margin: 10px ;
+    transition: transform 0.3s ease;
 }
-.navcontainer{
-    background-color:burlywood ;
+
+.navtitle:hover {
+    transform: translateY(-2px);
+    color: var(--accent);
 }
+
 .title {
-    font-size: 150px;
-    color: darkblue;
-    margin: 20px;
+    font-size: 6rem;
+    color: var(--primary);
+    margin: var(--l) 0;
+    font-weight: 700;
+    letter-spacing: -2px;
+    opacity: 0.9;
 }
+
+.subt {
+    font-size: 2rem;
+    color: var(--secondary);
+    margin: var(--m) 0;
+    font-weight: 600;
+}
+
 .text {
-    font-size: 30px;
-    color: brown;
+    font-size: 1.2rem;
+    color: var(--text);
+    max-width: 800px;
+    margin: 0 auto;
+    padding: var(--m);
+    line-height: 1.8;
+}
+
+section {
+    margin: var(--l) 0;
+    padding: var(--m);
+    background: white;
+    border-radius: 10px;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    transform: translateY(0);
+    transition: transform 0.3s ease;
+}
+
+section:hover {
+    transform: translateY(-5px);
+}
+
+img {
+    border-radius: 15px;
+    box-shadow: 0 8px 16px rgba(0,0,0,0.1);
+    transition: transform 0.3s ease;
+}
+
+img:hover {
+    transform: scale(1.02);
+}
+
+/* Mouse follow effect */
+.mouse-cursor {
+    width: 20px;
+    height: 20px;
+    background: var(--accent);
+    border-radius: 50%;
+    position: fixed;
+    pointer-events: none;
+    mix-blend-mode: difference;
+    transition: transform 0.2s ease;
+    transform: translate(-50%, -50%);
+    z-index: 9999;
+    opacity: 0.5;
 }

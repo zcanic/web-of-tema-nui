@@ -11,7 +11,7 @@
       <h1 class="navtitle">mari-book</h1>
     </nav>
     <div style="text-align: center;">
-      <img src="mari-head.jpg" alt="temati" style="height: 300px;width: auto;">
+      <img src="mari-head.jpg" alt="temati" style="height: 300px;width: auto;margin-top: 30px;">
     </div>
       <p class="u-textcentre title" >mari-chan</p>
     <hr/>
@@ -26,5 +26,33 @@
       <h1 class="subt">好きな食べ物</h1>
       <div class="text">背脂豚骨ラーメンとカツカレーと厚切りとんかつ</div>
     </section>
+    
+    <!-- 鼠标跟随效果元素 -->
+    <div class="mouse-cursor"></div>
+    
+    <script>
+      // 鼠标跟随效果
+      const cursor = document.querySelector('.mouse-cursor');
+      
+      document.addEventListener('mousemove', (e) => {
+        cursor.style.left = e.clientX + 'px';
+        cursor.style.top = e.clientY + 'px';
+      });
+      
+      // 鼠标进入可交互元素时的效果
+      const interactiveElements = document.querySelectorAll('a, button, .navtitle, img, section');
+      
+      interactiveElements.forEach(el => {
+        el.addEventListener('mouseenter', () => {
+          cursor.style.transform = 'translate(-50%, -50%) scale(1.5)';
+          cursor.style.opacity = '0.8';
+        });
+        
+        el.addEventListener('mouseleave', () => {
+          cursor.style.transform = 'translate(-50%, -50%) scale(1)';
+          cursor.style.opacity = '0.5';
+        });
+      });
+    </script>
   </body>
 </html>
