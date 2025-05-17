@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zcanic Voice Service 演示</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .container {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        
+        .form-group {
+            margin-bottom: 15px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        
+        textarea, select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        
+        button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        
+        button:hover {
+            background-color: #45a049;
+        }
+        
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #f9f9f9;
+            border-radius: 4px;
+            display: none;
+        }
+        
+        .loading {
+            text-align: center;
+            display: none;
+        }
+        
+        .error {
+            color: #e74c3c;
+            margin-top: 10px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <h1>🎵 Zcanic Voice Service 演示</h1>
+    
+    <div class="container">
+        <div class="form-group">
+            <label for="serverUrl">服务器地址:</label>
+            <input type="text" id="serverUrl" value="http://localhost:8000" style="width: 100%; padding: 8px;">
+        </div>
+        
+        <div class="form-group">
+            <label for="apiKey">API密钥 (可选):</label>
+            <input type="text" id="apiKey" placeholder="如果服务器需要认证，请输入API密钥" style="width: 100%; padding: 8px;">
+        </div>
+        
+        <div class="form-group">
+            <label for="text">中文文本:</label>
+            <textarea id="text" rows="4" placeholder="请输入要转换为语音的中文文本...">你好，我是一只可爱的猫娘！请多关照喵～</textarea>
+        </div>
+        
+        <div class="form-group">
+            <label for="speakerId">选择说话人:</label>
+            <select id="speakerId">
+                <option value="46">ずんだもん（あまあま）- ID: 46</option>
+                <option value="47">ずんだもん（ノーマル）- ID: 47</option>
+                <option value="8">花江夏树 - ID: 8</option>
+                <!-- 更多说话人将通过API动态加载 -->
+            </select>
+            <button id="loadSpeakers" style="margin-top: 10px;">加载所有说话人</button>
+        </div>
+        
+        <button id="generateVoice">生成语音</button>
+        
+        <div class="loading">
+            <p>处理中，请稍候...</p>
+        </div>
+        
+        <div class="error">
+            出错了！请检查服务器是否正常运行。
+        </div>
+        
+        <div class="result">
+            <h3>结果</h3>
+            <p><strong>翻译:</strong> <span id="translatedText"></span></p>
+            <p><strong>处理时间:</strong> <span id="processingTime"></span>毫秒</p>
+            <div>
+                <audio id="audioPlayer" controls style="width: 100%;"></audio>
+            </div>
+            <button id="playAudio">播放</button>
+            <button id="downloadAudio">下载音频</button>
+        </div>
+    </div>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // 元素引用
+            const serverUrlInput = document.getElementById('serverUrl');
+            const apiKeyInput = document.getElementById('apiKey');
+            const textInput = document.getElementById('text');
+            const speakerIdSelect = document.getElementById('speakerId');
+            const generateButton = document.getElementById('generateVoice');
+            const loadSpeakersButton = document.getElementById('loadSpeakers');
+            const loadingDiv = document.querySelector('.loading');
+            const errorDiv = document.querySelector('.error');
+            const resultDiv = document.querySelector('.result');
+            const translatedTextSpan = document.getElementById('translatedText');
+            const processingTimeSpan = document.getElementById('processingTime');
+            const audioPlayer = document.getElementById('audioPlayer');
+            const playButton = document.getElementById('playAudio');
+            const downloadButton = document.getElementById('downloadAudio');
+            
+            // 事件处理
+            generateButton.addEventListener('click', generateVoice);
+            loadSpeakersButton.addEventListener('click', loadSpeakers);
+            playButton.addEventListener('click', function() {
+                audioPlayer.play();
+            });
+            
+            // 加载说话人列表
+            async function loadSpeakers() {
+                try {
+                    loadSpeakersButton.disabled = true;
+                    loadSpeakersButton.textContent = "加载中...";
+                    
+                    const serverUrl = serverUrlInput.value.trim();
+                    const apiKey = apiKeyInput.value.trim();
+                    
+                    // 准备请求头
+                    const headers = {};
+                    if (apiKey) {
+                        headers['X-API-Key'] = apiKey;
+                    }
+                    
+                    // 发送请求
+                    const response = await fetch(`${serverUrl}/api/speakers`, {
+                        method: 'GET',
+                        headers: headers
+                    });
+                    
+                    if (!response.ok) {
+                        throw new Error(`HTTP错误! 状态码: ${response.status}`);
+                    }
+                    
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        // 清除现有选项
+                        speakerIdSelect.innerHTML = '';
+                        
+                        // 添加所有说话人选项
+                        data.speakers.forEach(speaker => {
+                            speaker.styles.forEach(style => {
+                                const option = document.createElement('option');
+                                option.value = style.id;
+                                option.textContent = `${speaker.name} (${style.name}) - ID: ${style.id}`;
+                                speakerIdSelect.appendChild(option);
+                            });
+                        });
+                        
+                        console.log(`加载了 ${data.speakers.length} 个说话人`);
+                    } else {
+                        throw new Error(data.message || '获取说话人列表失败');
+                    }
+                } catch (error) {
+                    console.error('加载说话人失败:', error);
+                    alert(`无法加载说话人列表: ${error.message}`);
+                } finally {
+                    loadSpeakersButton.disabled = false;
+                    loadSpeakersButton.textContent = "加载所有说话人";
+                }
+            }
+            
+            // 生成语音
+            async function generateVoice() {
+                try {
+                    // 重置UI状态
+                    resultDiv.style.display = 'none';
+                    errorDiv.style.display = 'none';
+                    loadingDiv.style.display = 'block';
+                    generateButton.disabled = true;
+                    
+                    // 获取输入
+                    const serverUrl = serverUrlInput.value.trim();
+                    const apiKey = apiKeyInput.value.trim();
+                    const text = textInput.value.trim();
+                    const speakerId = parseInt(speakerIdSelect.value);
+                    
+                    if (!text) {
+                        throw new Error('请输入要转换的文本');
+                    }
+                    
+                    // 准备请求数据
+                    const requestData = {
+                        text: text,
+                        speaker_id: speakerId,
+                        message_id: `web-demo-${Date.now()}`,
+                        bypass_cache: false
+                    };
+                    
+                    // 准备请求头
+                    const headers = {
+                        'Content-Type': 'application/json'
+                    };
+                    
+                    if (apiKey) {
+                        headers['X-API-Key'] = apiKey;
+                    }
+                    
+                    // 发送请求
+                    const response = await fetch(`${serverUrl}/api/tts`, {
+                        method: 'POST',
+                        headers: headers,
+                        body: JSON.stringify(requestData)
+                    });
+                    
+                    if (!response.ok) {
+                        throw new Error(`HTTP错误! 状态码: ${response.status}`);
+                    }
+                    
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        // 更新结果显示
+                        translatedTextSpan.textContent = data.translated_text;
+                        processingTimeSpan.textContent = data.duration_ms;
+                        
+                        // 设置音频播放器源
+                        const audioUrl = `${serverUrl}${data.audio_url}`;
+                        audioPlayer.src = audioUrl;
+                        
+                        // 设置下载链接
+                        downloadButton.onclick = function() {
+                            const a = document.createElement('a');
+                            a.href = audioUrl;
+                            a.download = `zcanic-voice-${Date.now()}.wav`;
+                            document.body.appendChild(a);
+                            a.click();
+                            document.body.removeChild(a);
+                        };
+                        
+                        // 显示结果
+                        resultDiv.style.display = 'block';
+                        
+                        // 自动播放音频
+                        try {
+                            await audioPlayer.play();
+                        } catch (playError) {
+                            console.warn('自动播放被浏览器阻止，需要用户手动播放', playError);
+                        }
+                    } else {
+                        throw new Error(data.message || 'TTS请求失败');
+                    }
+                } catch (error) {
+                    console.error('生成语音失败:', error);
+                    errorDiv.textContent = `错误: ${error.message}`;
+                    errorDiv.style.display = 'block';
+                } finally {
+                    loadingDiv.style.display = 'none';
+                    generateButton.disabled = false;
+                }
+            }
+        });
+    </script>
+</body>
+</html> 

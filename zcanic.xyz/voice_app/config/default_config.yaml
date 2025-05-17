@@ -1,0 +1,62 @@
+# Zcanic Voice Service 默认配置文件
+# 通过修改此文件或创建 config_local.yaml 来自定义设置
+
+# 服务配置
+server:
+  host: "0.0.0.0"
+  port: 8000
+  debug: false
+  # 音频文件存储路径
+  audio_storage_path: "./audio_storage"
+  # 缓存设置
+  enable_cache: true
+  cache_expiry_hours: 24
+  # 安全设置 (建议在生产环境配置)
+  api_key: "" # 设置为空字符串表示不需要API密钥
+  cors_origins: ["*"]
+
+# AI翻译配置
+ai:
+  # API设置
+  api_base: "https://api.openai.com/v1"
+  api_key: "" # ⚠️请添加您的API密钥
+  model: "gpt-3.5-turbo"
+  timeout_seconds: 30
+  max_retries: 2
+
+  # 系统提示词
+  system_prompt: "你是一位专业的日语翻译。请将以下中文文本翻译为自然、流畅的日语。翻译时，请注意以下要点：\n1. 保持原文的语气和情感\n2. 使用适合猫娘角色的日语表达方式\n3. 必要时可以适当本地化表达，但保持原意\n4. 对于中文特有的概念，选择合适的日语表达\n5. 仅输出翻译结果，不要包含额外解释\n6. 可以在句尾适当添加'にゃ～'等猫娘语气词"
+
+  # 请求参数
+  temperature: 0.3
+  max_tokens: 1000
+
+# Voicevox配置
+voicevox:
+  # Voicevox Engine API
+  engine_url: "http://localhost:50021"
+  timeout_seconds: 30
+  # 默认说话人ID (可在Voicevox引擎中查看所有可用ID)
+  # 46 = ずんだもん（あまあま）
+  default_speaker_id: 46
+
+  # 语音合成参数
+  audio_parameters:
+    # 语速 (0.5-2.0)
+    speed_scale: 1.0
+    # 音高 (-0.15-0.15)
+    pitch_scale: 0.0
+    # 音调 (-0.15-0.15)
+    intonation_scale: 1.0
+    # 音量 (0.0-2.0)
+    volume_scale: 1.0
+
+  # 音频格式
+  output_format: "wav" # wav 或 mp3
+
+# 日志配置
+logging:
+  level: "INFO" # DEBUG, INFO, WARNING, ERROR, CRITICAL
+  save_path: "./logs"
+  max_file_size_mb: 10
+  backup_count: 5

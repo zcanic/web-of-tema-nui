@@ -1,254 +1,242 @@
 const express = require('express');
 const cors = require('cors');
-const mysql = require('mysql2/promise'); // 使用 promise 版本的 mysql2 喵~
-const OpenAI = require('openai'); // <-- 导入 OpenAI
-const multer = require('multer'); // <-- 导入 multer
-const path = require('path');   // <-- 导入 path
-const fs = require('fs');       // <-- 导入 fs (用于创建目录)
+const helmet = require('helmet'); // <-- 引入 helmet
+const path = require('path');
+const cron = require('node-cron'); // Import node-cron
+// const { fetchAndSummarizeNews } = require('./newsService'); // <-- REMOVE News Service
+// const { getNewsConfig, setNewsConfig } = require('./newsConfigService'); // <-- REMOVE News Config Service
+require('dotenv').config({ path: path.resolve(__dirname, '../.env') }); // <-- 添加 dotenv 支持，读取 .env 文件
+// const fortuneRoutes = require('./routes/fortuneRoutes'); // <-- Remove this duplicate declaration
+const { initializeDatabase, pool } = require('./db/database'); // <-- Import pool along with initializer
+const logger = require('./utils/logger'); // <-- 引入 Winston logger
+const { startTaskProcessor } = require('./utils/taskManager'); // <-- 引入任务处理器
+const upload = require('./config/multerConfig'); // <-- 导入 multer 配置
+const authRoutes = require('./routes/authRoutes'); // <-- 导入认证路由
+const postRoutes = require('./routes/postRoutes'); // <-- 导入帖子路由
+const uploadRoutes = require('./routes/uploadRoutes'); // <-- 导入上传路由
+const aiRoutes = require('./routes/aiRoutes'); // <-- 导入 AI 路由
+// const newsRoutes = require('./routes/newsRoutes'); // <-- REMOVE News Routes
+const fortuneRoutes = require('./routes/fortuneRoutes'); // <-- Keep one declaration
+const memoryRoutes = require('./routes/memoryRoutes'); // <-- Import memory routes
+const commentRoutes = require('./routes/commentRoutes'); // <-- Import comment routes
+const chatRoutes = require('./routes/chatRoutes'); // <-- 导入聊天路由
+const taskRoutes = require('./routes/taskRoutes'); // <-- 导入任务路由
+const { uploadDir, uploadUrlPath } = require('./config/paths'); // <-- 导入统一路径
+const openai = require('./config/openaiConfig'); // <-- 导入 OpenAI 实例 (可能为 null)
+const rateLimit = require('express-rate-limit'); // <-- Import rateLimit
+const globalErrorHandler = require('./middleware/globalErrorHandler'); // <-- UNCOMMENT this require
+const fs = require('fs'); // <-- Import fs here instead of inline require
+const cookieParser = require('cookie-parser'); // <-- 导入 cookie-parser
+const { DEFAULT_SYSTEM_PROMPT } = require('./config/prompts'); // 导入系统提示
+
+// 日志显示系统提示前200个字符，确认加载
+logger.info(`[Server] 加载的系统提示前200个字符: ${DEFAULT_SYSTEM_PROMPT ? DEFAULT_SYSTEM_PROMPT.substring(0, 200) + '...' : 'undefined'}`);
+
+// --- Early Environment Variable Check --- 
+const requiredEnvVars = ['DB_HOST', 'DB_USER', 'DB_PASSWORD', 'DB_DATABASE', 'JWT_SECRET'];
+if (process.env.NODE_ENV === 'production') {
+  requiredEnvVars.push('CORS_ORIGIN');
+}
+const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
+if (missingVars.length > 0) {
+  logger.error(`启动失败喵！缺少必要的环境变量: ${missingVars.join(', ')}`);
+  process.exit(1);
+}
+logger.info('必要的环境变量检查通过喵！');
+// --- End Check --- 
 
 const app = express();
-const port = 3001; // 我们让服务器运行在 3001 端口喵~
+const PORT = process.env.PORT || 3001;
 
-// --- 数据库配置 (使用占位符，部署前请替换!) ---
-const dbConfig = {
-  host: 'localhost', // 改回 localhost，因为后端和数据库将在同一台服务器运行喵~
-  user: 'zcanic', // <- 修正用户名喵~
-  password: '945b4886e669ffcb', // 主人提供的密码喵~
-  database: 'zcanic', // 主人提供的数据库名喵~
-  waitForConnections: true,
-  connectionLimit: 10, // 连接池大小喵~
-  queueLimit: 0
+// --- Trust Proxy --- 
+// Trust the first proxy hop (e.g., Nginx in front of the app)
+// Required for express-rate-limit to correctly identify client IP behind proxy
+app.set('trust proxy', 1);
+logger.info('已配置信任代理喵 (trust proxy = 1)');
+
+// --- 数据库配置和初始化已移至 db/database.js ---
+
+// --- OpenAI 配置已移至 config/openaiConfig.js ---
+
+// --- Multer 配置已移至 config/multerConfig.js ---
+
+// --- 中间件 ---
+// !! 安全相关中间件建议放在前面 !!
+app.use(helmet()); // <-- 使用 helmet 设置安全头
+
+// CORS 配置 (开发环境宽松，生产环境应指定来源)
+const corsOptions = {
+  // origin: process.env.NODE_ENV === 'production' ? process.env.FRONTEND_URL : '*', // 生产环境使用环境变量指定前端 URL
+  // credentials: true, // 如果需要 cookie
 };
+// 提醒：生产部署时务必在 .env 配置 FRONTEND_URL 并取消注释上面的 origin 设置！
+app.use(cors({ origin: process.env.CORS_ORIGIN || 'http://localhost:5173', credentials: true }));
 
-// --- OpenAI 配置 (安全警告!) ---
-// ... (API Key logic - use process.env recommended!) ...
-const apiKey = process.env.OPENAI_API_KEY || 'sk-************************************************'; // Example: prioritize env var
-const apiBaseUrl = 'https://api.siliconflow.cn/v1'; // Define the base URL
-
-const openai = new OpenAI({
-  apiKey: apiKey,
-  baseURL: apiBaseUrl, // <-- 添加 baseURL 配置！
+app.use(express.json()); // 解析 JSON 请求体
+app.use(cookieParser()); // <-- 使用 cookie-parser
+app.use('/api/fortune', fortuneRoutes);
+// --- 添加早期请求日志中间件 ---
+app.use((req, res, next) => {
+  // 使用 logger 记录请求信息，级别为 'http' 或 'info'
+  logger.http(`收到请求喵: ${req.method} ${req.originalUrl}`, { // 使用 http 级别更合适
+    ip: req.ip, // 记录 IP 地址
+    method: req.method,
+    url: req.originalUrl,
+    userAgent: req.get('User-Agent') // 记录 User-Agent
+  });
+  next(); // 继续处理下一个中间件或路由
 });
-console.log(`OpenAI 客户端已配置，将请求发送至: ${apiBaseUrl} 喵~`); // 添加日志确认
+// --- 结束添加早期日志 ---
 
-// --- Multer 配置 (用于图片上传) ---
-const uploadDir = path.join(__dirname, 'public/uploads'); // 定义上传目录
-
-// 确保上传目录存在
-if (!fs.existsSync(uploadDir)){
-    fs.mkdirSync(uploadDir, { recursive: true });
-    console.log(`创建上传目录喵: ${uploadDir}`);
-}
-
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, uploadDir); // 文件存储路径
-  },
-  filename: function (req, file, cb) {
-    // 生成唯一文件名: 时间戳-随机数.扩展名
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, uniqueSuffix + path.extname(file.originalname));
-  }
-});
-
-// 文件过滤器，只允许图片
-const fileFilter = (req, file, cb) => {
-  if (file.mimetype.startsWith('image/')) {
-    cb(null, true);
-  } else {
-    cb(new Error('只允许上传图片文件喵!'), false);
-  }
-};
-
-const upload = multer({ 
-  storage: storage,
-  fileFilter: fileFilter,
-  limits: { fileSize: 5 * 1024 * 1024 } // 限制文件大小为 5MB
-}); 
-
-let pool; // 数据库连接池
-
-// --- 数据库初始化函数 ---
-async function initializeDatabase() {
+// --- 配置静态文件服务 ---
+// const staticUploadDir = path.join(__dirname, 'public/uploads'); // <-- 不再需要
+// 确保目录存在 (使用导入的 uploadDir)
+if (!fs.existsSync(uploadDir)) {
+  logger.warn(`[Server] Upload directory ${uploadDir} does not exist. Attempting to create...`);
   try {
-    // 尝试连接到 MySQL 服务器 (不指定数据库) 来创建数据库
-    const tempConnection = await mysql.createConnection({
-      host: dbConfig.host,
-      user: dbConfig.user,
-      password: dbConfig.password,
+      fs.mkdirSync(uploadDir, { recursive: true });
+      logger.info(`[Server] Successfully created upload directory: ${uploadDir}`);
+  } catch (err) {
+       logger.error(`[Server] CRITICAL: Failed to create upload directory ${uploadDir}. File uploads will likely fail. Error:`, err);
+       // Consider whether to exit the process if uploads are critical
+       // process.exit(1);
+  }
+}
+app.use(uploadUrlPath, express.static(uploadDir)); // <-- 使用导入的 URL 路径和目录路径
+logger.info(`提供静态文件服务于 ${uploadUrlPath} 路径，源自 ${uploadDir} 喵~`); // 使用 logger
+
+// --- 挂载路由 --- 
+app.use('/api/auth', authRoutes); // <-- 使用认证路由，挂载在 /api/auth 下
+app.use('/api/posts', postRoutes); // <-- 使用帖子路由，挂载在 /api/posts 下
+// Mount comment routes nested under posts
+app.use('/api/posts/:postId/comments', commentRoutes); // <-- ADDED this line
+app.use('/api/upload', uploadRoutes); // <-- 使用上传路由，挂载在 /api/upload 下
+app.use('/api/ai', aiRoutes); // <-- 使用 AI 路由，挂载在 /api/ai 下
+// app.use('/api/news', newsRoutes); // <-- REMOVE News Routes usage
+app.use('/api/fortune', fortuneRoutes); // <-- ADD Fortune Routes usage
+app.use('/api/memory', memoryRoutes); // <-- Use memory routes
+app.use('/api/chat', chatRoutes); // <-- 使用聊天路由
+app.use('/api/tasks', taskRoutes); // <-- 使用任务路由
+// app.use('/api/comments', commentRoutes); // <-- REMOVE this top-level mounting if it exists
+
+// --- 旧的 apiRouter 可以移除了 (如果还有的话) ---
+// const apiRouter = express.Router(); 
+// apiRouter.use(...); 
+// app.use('/api', apiRouter);
+
+// --- 全局错误处理中间件 (改进) ---
+app.use(globalErrorHandler); // Use the global error handler
+
+// --- 定时任务 (Cron Job) --- 
+// !! REMOVE the old news summary cron job !!
+/*
+cron.schedule('0 1 * * *', async () => { 
+  logger.info('Running daily news summary cron job 喵...');
+  const pool = app.locals.pool; 
+  if (pool && openai) {
+    try {
+      await fetchAndSummarizeNews(pool, openai);
+      logger.info('Daily news summary cron job finished successfully 喵.');
+    } catch (err) {
+      logger.error('Daily news summary cron job failed 喵:', { error: err });
+    }
+  } else {
+    logger.warn('数据库或 OpenAI 未初始化，跳过本次定时 News 摘要任务喵。')
+  }
+}, {
+  scheduled: true,
+  timezone: "Asia/Shanghai" 
+});
+logger.info("News 摘要定时任务已设置 (每天凌晨 1 点) 喵~");
+*/
+logger.info("不再设置 News 定时任务喵~"); // Log removal
+
+// --- Rate Limiting (Example, apply before routes) ---
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // Limit each IP to 100 requests per windowMs
+  message: '请求太频繁了喵，请稍后再试！',
+  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+});
+// Apply the rate limiting middleware to all requests or specific APIs
+// app.use(limiter); // Apply globally - BE CAREFUL, might block legitimate bursts
+app.use('/api/auth', limiter); // Example: Apply only to auth routes
+app.use('/api/posts', limiter); // Example: Apply to posts
+app.use('/api/ai', limiter); // Example: Apply to AI routes
+logger.info('速率限制中间件已配置喵 (针对部分 API)');
+
+// --- 全局变量，用于存储任务处理器的清理函数 ---
+let taskProcessorCleanup = null;
+
+// --- Initialize DB and Start Server --- 
+const start = async () => {
+  try {
+    // 确保 pool 确实存在 (虽然理论上 require 时已处理)
+    if (!pool) {
+        logger.error('[Server] CRITICAL: Database pool is not available on startup!');
+        process.exit(1);
+    }
+
+    // Attach pool to app.locals 
+    app.locals.pool = pool;
+    logger.info('[Server] Database pool attached to app.locals.pool');
+
+    // --- Initialize Database Schema ---
+    logger.info('[Server] Initializing database schema...');
+    await initializeDatabase(pool); // <-- 添加数据库初始化调用
+    logger.info('[Server] Database schema initialization complete.');
+    // --- End Initialize Database Schema ---
+    
+    // --- 启动任务处理器 ---
+    taskProcessorCleanup = startTaskProcessor(pool);
+    logger.info('[Server] 异步任务处理器已启动');
+    
+    app.listen(PORT, () => {
+      logger.info(`Server listening on port ${PORT} 喵!`); // <-- 我们期待看到这条日志！
     });
-    await tempConnection.query(`CREATE DATABASE IF NOT EXISTS \`${dbConfig.database}\`;`);
-    await tempConnection.end();
-    console.log(`数据库 '${dbConfig.database}' 检查/创建完毕喵~`);
-
-    // 现在创建连接池，连接到指定数据库
-    pool = mysql.createPool(dbConfig);
-
-    // 检查并创建 blog_posts 表
-    const createTableQuery = `
-      CREATE TABLE IF NOT EXISTS blog_posts (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        title VARCHAR(255) NOT NULL,
-        content TEXT NOT NULL,
-        imageUrl VARCHAR(1024),
-        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-      );
-    `;
-    await pool.query(createTableQuery);
-    console.log("数据表 'blog_posts' 检查/创建完毕喵~");
-
   } catch (error) {
-    console.error('数据库初始化失败喵 (｡>﹏<｡): ', error);
-    // 如果数据库无法初始化，服务器启动可能会失败或无法正常工作
-    // 这里我们先退出进程，实际部署时可能需要更复杂的重试或告警逻辑
+     // 这个 catch 块现在主要捕获 app.locals 赋值或 app.listen 的同步错误 (虽然很少见)
+     logger.error('[Server] Failed to attach pool or start listening:', error);
+     process.exit(1);
+  }
+};
+
+start(); // Call the start function directly
+
+// --- 处理进程关闭前的清理工作 ---
+process.on('SIGTERM', () => {
+  logger.info('[Server] SIGTERM received, shutting down gracefully');
+  cleanup();
+});
+
+process.on('SIGINT', () => {
+  logger.info('[Server] SIGINT received, shutting down gracefully');
+  cleanup();
+});
+
+// 清理函数
+function cleanup() {
+  try {
+    // 停止任务处理器
+    if (taskProcessorCleanup) {
+      taskProcessorCleanup();
+      taskProcessorCleanup = null;
+    }
+    
+    // 关闭数据库连接池
+    if (pool) {
+      pool.end();
+      logger.info('[Server] Database connection pool closed');
+    }
+    
+    logger.info('[Server] Cleanup complete, exiting');
+    process.exit(0);
+  } catch (error) {
+    logger.error('[Server] Error during cleanup:', error);
     process.exit(1);
   }
 }
 
-// 中间件
-app.use(cors()); // 允许跨域请求
-app.use(express.json()); // 解析 JSON 请求体
-
-// --- 配置静态文件服务，用于访问上传的图片 ---
-// 请求 /uploads/xxx.jpg 将会查找 server/public/uploads/xxx.jpg 文件
-app.use('/uploads', express.static(uploadDir)); 
-console.log(`提供静态文件服务于 /uploads 路径，源自 ${uploadDir} 喵~`);
-
-// API Endpoints
-
-// 获取所有博客
-app.get('/posts', async (req, res) => {
-  console.log('GET /posts request received 喵~');
-  try {
-    const [rows] = await pool.query('SELECT * FROM blog_posts ORDER BY timestamp DESC');
-    res.json(rows);
-  } catch (error) {
-    console.error('获取博客失败喵:', error);
-    res.status(500).json({ message: '获取博客列表时发生错误 T_T' });
-  }
-});
-
-// 添加新博客
-app.post('/posts', async (req, res) => {
-  console.log('POST /posts request received with body:', req.body);
-  const { title, content, imageUrl } = req.body;
-
-  if (!title || !content) {
-    return res.status(400).json({ message: 'Title and content are required 喵!' });
-  }
-
-  try {
-    const insertQuery = 'INSERT INTO blog_posts (title, content, imageUrl, timestamp) VALUES (?, ?, ?, ?)';
-    const timestamp = new Date(); // 用数据库的 CURRENT_TIMESTAMP 也可以，这里用 JS 时间保持一致性
-    const [result] = await pool.query(insertQuery, [title, content, imageUrl || null, timestamp]);
-
-    const newPost = {
-      id: result.insertId,
-      title,
-      content,
-      imageUrl: imageUrl || null,
-      timestamp: timestamp.toISOString(), // 返回 ISO 格式时间戳给前端
-    };
-    console.log('New post added to DB:', newPost);
-    res.status(201).json(newPost);
-
-  } catch (error) {
-    console.error('添加博客失败喵:', error);
-    res.status(500).json({ message: '添加博客时发生错误 T_T' });
-  }
-});
-
-// 删除博客
-app.delete('/posts/:id', async (req, res) => {
-  const postId = parseInt(req.params.id, 10);
-  console.log(`DELETE /posts/${postId} request received 喵~`);
-
-  if (isNaN(postId)) {
-     return res.status(400).json({ message: '无效的博客 ID 喵!' });
-  }
-
-  try {
-    const deleteQuery = 'DELETE FROM blog_posts WHERE id = ?';
-    const [result] = await pool.query(deleteQuery, [postId]);
-
-    if (result.affectedRows > 0) {
-      console.log(`Post with id ${postId} deleted from DB.`);
-      res.status(204).send(); // No Content 成功删除
-    } else {
-      console.log(`Post with id ${postId} not found in DB.`);
-      res.status(404).json({ message: 'Post not found 喵!' });
-    }
-  } catch (error) {
-    console.error('删除博客失败喵:', error);
-    res.status(500).json({ message: '删除博客时发生错误 T_T' });
-  }
-});
-
-// --- OpenAI 聊天代理 API ---
-app.post('/chat', async (req, res) => {
-  console.log('POST /chat request received 喵~');
-  // 从请求体获取数据，提供默认值
-  const { messages, model = 'deepseek-ai/DeepSeek-R1', temperature = 0.7, max_tokens = 2000 } = req.body; 
-
-  if (!messages || !Array.isArray(messages) || messages.length === 0) {
-    return res.status(400).json({ message: '无效的消息格式喵！' });
-  }
-
-  if (!apiKey || apiKey.startsWith('sk-***')) { // 更安全的占位符检查
-     console.error('OpenAI API Key 未在服务器端配置喵!');
-     return res.status(500).json({ message: '服务器未配置 AI 服务喵 T_T' });
-  }
-
-  try {
-    console.log(`向 OpenAI 发送请求: model=${model}, temp=${temperature}, max_tokens=${max_tokens}`);
-    const completion = await openai.chat.completions.create({
-      messages: messages, 
-      model: model, 
-      temperature: temperature,
-      max_tokens: max_tokens,
-    });
-
-    console.log('从 OpenAI 收到响应喵~');
-    if (completion.choices && completion.choices.length > 0 && completion.choices[0].message) {
-      res.json({ completion: completion.choices[0].message.content });
-    } else {
-      console.error('OpenAI 返回了无效的响应结构喵:', completion);
-      throw new Error('OpenAI 返回了无效的响应结构喵');
-    }
-
-  } catch (error) {
-    // 记录更详细的错误信息
-    console.error('调用 OpenAI API 出错喵 (｡>﹏<｡):', error.name, error.message, error.stack);
-    // 尝试返回更具体的错误类型给前端（如果可能）
-    let clientErrorMessage = `调用 AI 服务失败喵: ${error.message}`;
-    if (error.status) { // OpenAI 库可能会附加 status
-        clientErrorMessage = `调用 AI 服务失败喵 (Code: ${error.status}): ${error.message}`;
-    }
-    res.status(500).json({ message: clientErrorMessage });
-  }
-});
-
-// --- 图片上传 API ---
-app.post('/api/upload', upload.single('image'), (req, res) => {
-  if (!req.file) {
-    return res.status(400).json({ success: false, error: '没有文件被上传喵，或者文件类型不被接受。' });
-  }
-  // 文件上传成功，返回 web 可访问的 URL
-  const imageUrl = `/uploads/${req.file.filename}`; // 生成相对 URL
-  console.log(`图片上传成功喵: ${req.file.filename}, URL: ${imageUrl}`);
-  res.json({ success: true, imageUrl: imageUrl });
-}, (error, req, res, next) => {
-  // 处理 multer 可能抛出的错误 (如文件过大或类型不对)
-  console.error('图片上传失败喵:', error);
-  res.status(400).json({ success: false, error: error.message });
-});
-
-// --- 启动服务器 ---
-async function startServer() {
-  await initializeDatabase(); // 先初始化数据库
-  app.listen(port, () => {
-    console.log(`服务器正在 http://localhost:${port} 上运行喵~ (使用 MySQL) (ฅ^•ﻌ•^ฅ)`);
-  });
-}
-
-startServer(); // 启动！ 
+// Removed app export
+// module.exports = app; 
