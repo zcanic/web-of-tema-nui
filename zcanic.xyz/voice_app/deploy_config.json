@@ -1,0 +1,11 @@
+{
+  "RemoteServer": "123.57.182.94",
+  "WebsiteServer": "8.138.47.26",
+  "RemoteDir": "C:\\zcanic",
+  "UseSSL": false,
+  "SaveCredentials": false,
+  "AutoDeploy": true,
+  "SkipPrompts": false,
+  "PreferredDeployMethod": "script",
+  "DeployScript": "scripts/deploy_service.py"
+} 
