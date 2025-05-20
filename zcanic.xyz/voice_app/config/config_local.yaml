@@ -1,0 +1,14 @@
+# Zcanic Voice Service 本地配置
+# 此配置会覆盖默认配置
+
+# Voicevox配置
+voicevox:
+  # Voicevox Engine API地址
+  # 默认情况下Voicevox引擎在50021端口运行
+  # 如果引擎在同一台服务器上，保持localhost即可
+  # 如果引擎在不同服务器，请修改为对应IP地址
+  engine_url: "http://localhost:50021"
+
+  # 如果需要修改默认角色，可以更改speaker_id
+  # 46 = ずんだもん（あまあま）
+  # default_speaker_id: 46
